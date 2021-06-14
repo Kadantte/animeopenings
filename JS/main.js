@@ -42,6 +42,8 @@ window.onload = function() {
 	Tooltip.Element = DID("tooltip");
 	SubtitleManager.add(VideoElement);
 
+	let noHistory = history.state === null;
+
 	// Fix menu button. It is set in HTML to be a link to the FAQ page for anyone who has disabled JavaScript.
 	DID("menubutton").outerHTML = '<span id="menubutton" class="quadbutton fa fa-bars"></span>';
 
@@ -50,7 +52,7 @@ window.onload = function() {
 	GPB.style.display = "block";
 
 	// Set/Get history state
-	if (history.state == null) {
+	if (noHistory) {
 		// The title may have been set to a generic title in PHP.
 		document.title = videoData.hidden ? "Secret~" : videoData.title + " from " + videoData.source;
 		history.replaceState({video: videoData, directLink: !!location.search}, document.title, location.origin + location.pathname + (videoData.hidden ? "" : "?" + getVideoQuery(videoData)));
@@ -99,6 +101,13 @@ window.onload = function() {
 
 	// autoplay
 	if (autoplayRequested || !inIFrame) playVideo();
+
+	// check that the current video matches one of the requested video types
+	if (noHistory && !history.state.directLink && !DQS("#video-types input:checked[value="+videoData.type+"]")) {
+		// set the current data to 'hidden' so the current history state gets replaced
+		videoData.hidden = true;
+		getNewVideo();
+	}
 };
 
 window.onpopstate = popHist;
@@ -255,6 +264,8 @@ function aniopMouseMove(event) {
 }
 
 function getNewVideo() {
+	let wasPaused = VideoElement.paused;
+
 	// Pause the video and prevent button/mouse events.
 	pauseVideo();
 	tooltip("Loading...", "bottom: 50%; left: 50%; bottom: calc(50% - 16.5px); left: calc(50% - 46.5px); null");
@@ -278,7 +289,7 @@ function getNewVideo() {
 	);
 	r.onloadend = function(evt) {
 		let errorMessage = "Failed to load the next video.\n";
-		let error = r.responseText === null && r.responseText.length === 0;
+		let error = r.responseText === null || r.responseText.length === 0;
 		let response = error ? {} : JSON.parse(r.responseText);
 
 		if (!error && response.success) {
@@ -311,7 +322,7 @@ function getNewVideo() {
 		document.documentElement.style.pointerEvents = "";
 		loadingVideo = false;
 		tooltip();
-		playVideo();
+		if (!wasPaused) playVideo();
 	};
 	r.send();
 }
@@ -409,7 +420,7 @@ function playVideo(callback) {
 	if (VideoElement.paused) {
 		let playPromise = VideoElement.play();
 		if (playPromise)
-			playPromise.then(then).catch(e => console.error(e));
+			playPromise.then(then).catch(e => console.warn(e));
 		else then();
 	}
 
@@ -499,7 +510,7 @@ function onend() {
 		if (autonext) pauseVideo();
 		else playVideo();
 	} else {
-		if (autonext || document.title == "Secret~")
+		if (autonext || videoData.hidden)
 			getNewVideo();
 		else playVideo();
 	}
@@ -650,7 +661,7 @@ function keydown(e) {
 		case 83: // S
 			subtitles.toggle();
 			break;
-		case 191: // S
+		case 191: // /
 			listModal.open(e);
 			break;
 		default:
@@ -850,7 +861,7 @@ function setupPlayerJS() {
 		"setCurrentTime": value => skip(value - VideoElement.currentTime),
 		"getCurrentTime": _ => VideoElement.currentTime,
 		"setLoop": value => autonext = !value,
-		"getLoop": _ => !(autonext || document.title == "Secret~"),
+		"getLoop": _ => !(autonext || videoData.hidden),
 		"removeEventListener": (value,listener) => {
 			if (events[value]) {
 				events[value] = events[value].filter(l => l != listener);
